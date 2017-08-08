@@ -11,7 +11,6 @@ import {
   Helper as GlimmerHelper,
   ModifierManager,
   DOMTreeConstruction,
-  DOMChanges,
   IDOMChanges,
 
   // Partials
@@ -37,7 +36,6 @@ import {
   Bounds,
   ElementOperations,
   getDynamicVar,
-
   Template,
   templateFactory,
   Macros,
@@ -47,7 +45,8 @@ import {
   WithDynamicLayout,
   CompilationOptions,
   Handle,
-  CompilableTemplate
+  CompilableTemplate,
+  NewElementBuilder
 } from "@glimmer/runtime";
 
 import {
@@ -695,7 +694,8 @@ export class TestModifier {
   constructor(
     public element: Element,
     public args: CapturedArguments,
-    public dom: IDOMChanges
+    public appendOperations: DOMTreeConstruction,
+    public updateOperations: IDOMChanges
   ) { }
 }
 
@@ -704,28 +704,28 @@ export class TestModifierManager implements ModifierManager<TestModifier> {
   public updatedElements: Element[] = [];
   public destroyedModifiers: TestModifier[] = [];
 
-  create(element: Element, args: Arguments, _dynamicScope: DynamicScope, dom: IDOMChanges): TestModifier {
-    return new TestModifier(element, args.capture(), dom);
+  create(element: Element, args: Arguments, _dynamicScope: DynamicScope, appendOperations: DOMTreeConstruction, updateOperations: IDOMChanges): TestModifier {
+    return new TestModifier(element, args.capture(), appendOperations, updateOperations);
   }
 
   getTag({ args: { tag } }: TestModifier): Tag {
     return tag;
   }
 
-  install({ element, args, dom }: TestModifier) {
+  install({ element, args, appendOperations }: TestModifier) {
     this.installedElements.push(element);
 
     let param = args.positional.at(0).value();
-    dom.setAttribute(element, 'data-modifier', `installed - ${param}`);
+    appendOperations.setAttribute(element, 'data-modifier', `installed - ${param}`);
 
     return;
   }
 
-  update({ element, args, dom }: TestModifier) {
+  update({ element, args, updateOperations }: TestModifier) {
     this.updatedElements.push(element);
 
     let param = args.positional.at(0).value();
-    dom.setAttribute(element, 'data-modifier', `updated - ${param}`);
+    updateOperations.setAttribute(element, 'data-modifier', `updated - ${param}`);
 
     return;
   }
@@ -734,8 +734,8 @@ export class TestModifierManager implements ModifierManager<TestModifier> {
     return {
       destroy: () => {
         this.destroyedModifiers.push(modifier);
-        let { element, dom } = modifier;
-        dom.removeAttribute(element, 'data-modifier');
+        let { element, updateOperations } = modifier;
+        updateOperations.removeAttribute(element, 'data-modifier');
       }
     };
   }
@@ -745,6 +745,7 @@ export interface TestEnvironmentOptions {
   document?: Simple.Document;
   appendOperations?: DOMTreeConstruction;
   program?: TopLevelSyntax;
+  ElementBuilder?: typeof NewElementBuilder;
 }
 
 export interface Lookup {
@@ -901,12 +902,7 @@ export class TestEnvironment extends Environment {
   };
 
   constructor(options: TestEnvironmentOptions = {}) {
-    // let document = options.document || window.document;
-    // let appendOperations = options.appendOperations || new DOMTreeConstruction(document);
-    super({
-      appendOperations: options.appendOperations || new DOMTreeConstruction(options.document as Document || window.document),
-      updateOperations: new DOMChanges((options.document || window.document) as Document)
-    });
+    super();
 
     // recursive field, so "unsafely" set one half late (but before the resolver is actually used)
     this.resolver['options'] = this.compileOptions;
@@ -919,11 +915,6 @@ export class TestEnvironment extends Environment {
     this.registerModifier("action", new InertModifierManager());
 
     this.registerInternalHelper("hash", (_vm: VM, args: Arguments) => args.capture().named);
-  }
-
-  protocolForURL(url: string): string {
-    this.uselessAnchor.href = url;
-    return this.uselessAnchor.protocol;
   }
 
   registerHelper(name: string, helper: UserHelper): GlimmerHelper {

@@ -80,9 +80,9 @@ APPEND_OPCODES.add(Op.Modifier, (vm, { op1: specifier }) => {
   let manager = vm.constants.resolveSpecifier<ModifierManager>(specifier);
   let stack = vm.stack;
   let args = stack.pop<Arguments>();
-  let { constructing: element, updateOperations } = vm.elements();
+  let { constructing: element, dom: appendOperations, updateOperations } = vm.elements();
   let dynamicScope = vm.dynamicScope();
-  let modifier = manager.create(element as Simple.FIX_REIFICATION<Element>, args, dynamicScope, updateOperations);
+  let modifier = manager.create(element as Simple.FIX_REIFICATION<Element>, args, dynamicScope, appendOperations, updateOperations!);
 
   args.clear();
 
@@ -167,8 +167,8 @@ export class UpdateDynamicAttributeOpcode extends UpdatingOpcode {
     this.tag = reference.tag;
   }
 
-  evaluate(vm: UpdatingVM) {
+  evaluate(_vm: UpdatingVM) {
     let { attribute, reference } = this;
-    attribute.update(reference.value(), vm.env);
+    attribute.update(reference.value());
   }
 }

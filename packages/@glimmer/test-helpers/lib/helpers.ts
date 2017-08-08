@@ -222,6 +222,21 @@ export function getTextContent(el: Node) {
   }
 }
 
+export function blockStack() {
+  let stack: number[] = [];
+
+  return (id: number) => {
+    if (stack.indexOf(id) > -1) {
+      let close = `<!--%-block:${id}%-->`;
+      stack.pop();
+      return close;
+    } else {
+      stack.push(id);
+      return `<!--%+block:${id}%-->`;
+    }
+  };
+}
+
 export function strip(strings: TemplateStringsArray) {
   return strings[0].split('\n').map(s => s.trim()).join(' ');
 }

@@ -99,5 +99,6 @@ export {
 
 export { default as DOMChanges, SVG_NAMESPACE, DOMChanges as IDOMChanges, DOMTreeConstruction, isWhitespace, insertHTMLBefore } from './lib/dom/helper';
 export { normalizeProperty } from './lib/dom/props';
-export { ElementBuilder, NewElementBuilder, ElementOperations } from './lib/vm/element-builder';
+export { rehydratingBuilder } from './lib/vm/rehydrate-builder';
+export { ElementBuilder, NewElementBuilder, elementBuilder, ElementOperations } from './lib/vm/element-builder';
 export { default as Bounds, ConcreteBounds } from './lib/bounds';

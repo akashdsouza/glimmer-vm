@@ -1,7 +1,7 @@
 import { Scope, DynamicScope, Environment, Handle, Program } from '../environment';
 import { DestroyableBounds, clear, move as moveBounds } from '../bounds';
-import { NewElementBuilder, Tracker, UpdatableTracker } from './element-builder';
-import { Option, Opaque, Stack, LinkedList, Dict, dict, expect } from '@glimmer/util';
+import { NewElementBuilder, Tracker, UpdatableTracker, elementBuilder } from './element-builder';
+import { Option, Opaque, Stack, LinkedList, Dict, dict, expect } from "@glimmer/util";
 import {
   PathReference,
   IterationArtifacts,
@@ -33,10 +33,10 @@ export default class UpdatingVM {
 
   private frameStack: Stack<UpdatingVMFrame> = new Stack<UpdatingVMFrame>();
 
-  constructor(env: Environment, program: Program, { alwaysRevalidate = false }) {
+  constructor(doc: Document, env: Environment, program: Program, { alwaysRevalidate = false }) {
     this.env = env;
     this.constants = program.constants;
-    this.dom = env.getDOM();
+    this.dom = new DOMChanges(doc);
     this.alwaysRevalidate = alwaysRevalidate;
   }
 
@@ -153,7 +153,7 @@ export class TryOpcode extends BlockOpcode implements ExceptionHandler {
 
   protected bounds: UpdatableTracker;
 
-  constructor(start: Handle, state: VMState, bounds: UpdatableTracker, children: LinkedList<UpdatingOpcode>) {
+  constructor(start: Handle, state: VMState, bounds: UpdatableTracker, children: LinkedList<UpdatingOpcode>, private doc: Simple.Document) {
     super(start, state, bounds, children);
     this.tag = this._tag = UpdatableTag.create(CONSTANT_TAG);
   }
@@ -171,8 +171,7 @@ export class TryOpcode extends BlockOpcode implements ExceptionHandler {
 
     children.clear();
 
-    let elementStack = NewElementBuilder.resume(
-      state.env,
+    let elementStack = NewElementBuilder.resume(this.doc,
       bounds,
       bounds.reset(state.env)
     );
@@ -211,7 +210,7 @@ class ListRevalidationDelegate implements IteratorSynchronizerDelegate {
   private didInsert = false;
   private didDelete = false;
 
-  constructor(private opcode: ListBlockOpcode, private marker: Simple.Comment) {
+  constructor(private opcode: ListBlockOpcode, private marker: Simple.Comment, private doc: Simple.Document) {
     this.map = opcode.map;
     this.updating = opcode['children'];
   }
@@ -228,7 +227,7 @@ class ListRevalidationDelegate implements IteratorSynchronizerDelegate {
       nextSibling = this.marker;
     }
 
-    let vm = opcode.vmForInsertion(nextSibling);
+    let vm = opcode.vmForInsertion(nextSibling, this.doc);
     let tryOpcode: Option<TryOpcode> = null;
 
     let { start } = opcode;
@@ -314,7 +313,7 @@ export class ListBlockOpcode extends BlockOpcode {
       let marker = dom.createComment('');
       dom.insertAfter(bounds.parentElement(), marker, expect(bounds.lastNode(), "can't insert after an empty bounds"));
 
-      let target = new ListRevalidationDelegate(this, marker);
+      let target = new ListRevalidationDelegate(this, marker, dom.document);
       let synchronizer = new IteratorSynchronizer({ target, artifacts });
 
       synchronizer.sync();
@@ -326,13 +325,10 @@ export class ListBlockOpcode extends BlockOpcode {
     super.evaluate(vm);
   }
 
-  vmForInsertion(nextSibling: Option<Simple.Node>): VM {
+  vmForInsertion(nextSibling: Option<Simple.Node>, doc: Simple.Document): VM {
     let { bounds, state } = this;
 
-    let elementStack = NewElementBuilder.forInitialRender(
-      state.env,
-      { element: bounds.parentElement(), nextSibling }
-    );
+    let elementStack = elementBuilder(doc, { element: bounds.parentElement(), nextSibling });
 
     return VM.resume(state, elementStack);
   }
