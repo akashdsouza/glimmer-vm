@@ -10,13 +10,13 @@ import {
   Tag,
 } from '@glimmer/reference';
 import { initializeGuid } from '@glimmer/util';
-import { Handle } from '../../environment';
-import { LazyConstants } from '../../environment/constants';
 import { APPEND_OPCODES, OpcodeJSON, UpdatingOpcode } from '../../opcodes';
 import { Primitive, PrimitiveReference } from '../../references';
 import { CompilableTemplate } from '../../syntax/interfaces';
 import { VM, UpdatingVM } from '../../vm';
 import { Arguments } from '../../vm/arguments';
+import { LazyConstants } from "@glimmer/program";
+import { Handle } from "@glimmer/opcode-compiler";
 
 APPEND_OPCODES.add(Op.ChildScope, vm => vm.pushChildScope());
 
@@ -26,7 +26,7 @@ APPEND_OPCODES.add(Op.PushDynamicScope, vm => vm.pushDynamicScope());
 
 APPEND_OPCODES.add(Op.PopDynamicScope, vm => vm.popDynamicScope());
 
-APPEND_OPCODES.add(Op.Constant, (vm: VM & { constants: LazyConstants }, { op1: other }) => {
+APPEND_OPCODES.add(Op.Constant, (vm: VM<Opaque, Opaque> & { constants: LazyConstants }, { op1: other }) => {
   vm.stack.push(vm.constants.getOther(other));
 });
 
@@ -185,7 +185,7 @@ export class Assert extends UpdatingOpcode {
     this.cache = cache;
   }
 
-  evaluate(vm: UpdatingVM) {
+  evaluate(vm: UpdatingVM<Opaque, Opaque>) {
     let { cache } = this;
 
     if (isModified(cache.revalidate())) {
