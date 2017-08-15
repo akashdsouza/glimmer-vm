@@ -1,5 +1,5 @@
 import { PathReference, Tagged, TagWrapper, RevisionTag, DirtyableTag, Tag } from "@glimmer/reference";
-import { RenderResult, RenderLayoutOptions } from "@glimmer/runtime";
+import { RenderResult, RenderLayoutOptions, TemplateIterator, Environment } from "@glimmer/runtime";
 import { Opaque, Dict, dict, expect } from "@glimmer/util";
 import { NodeDOMTreeConstruction } from "@glimmer/node";
 import { Option } from "@glimmer/interfaces";
@@ -110,39 +110,14 @@ export abstract class AbstractRenderTest {
   protected assert = QUnit.assert;
   protected context: Dict<Opaque> = dict<Opaque>();
   protected renderResult: Option<RenderResult> = null;
+  protected helpers = dict<UserHelper>();
   private snapshot: NodesSnapshot = [];
-  private helpers = {};
   public testType: ComponentKind;
   public template: string;
 
-  constructor(protected env = new TestEnvironment()) {}
-
-  registerHelper(name: string, helper: UserHelper) {
-    this.helpers[name] = helper;
-  }
-
-  registerComponent(type: ComponentKind = this.testType, name: string, layout: string) {
-    switch (type) {
-      case "Glimmer":
-        this.env.registerEmberishGlimmerComponent(name, EmberishGlimmerComponent, layout);
-        break;
-      case "Curly":
-        this.env.registerEmberishCurlyComponent(name, EmberishCurlyComponent, layout);
-        break;
-
-      case "Dynamic":
-        this.env.registerEmberishCurlyComponent(name, EmberishCurlyComponent, layout);
-        break;
-      case "Basic":
-      case "Fragment":
-        this.env.registerBasicComponent(name, BasicComponent, layout);
-        break;
-    }
-  }
-
-  populateHelpers() {
-    Object.keys(this.helpers).forEach(name => this.env.registerHelper(name, this.helpers[name]));
-  }
+  abstract registerComponent(type: ComponentKind, name: string, layout: string): void;
+  abstract registerHelper(name: string, helper: UserHelper): void;
+  // abstract populateHelpers(): void;
 
   buildComponent(blueprint: ComponentBlueprint): string {
     let invocation = "";
@@ -396,9 +371,11 @@ export abstract class AbstractRenderTest {
   rerender(properties: Dict<Opaque> = {}): void {
     this.setProperties(properties);
 
-    this.env.begin();
-    expect(this.renderResult, "the test should call render() before rerender()").rerender();
-    this.env.commit();
+    let result = expect(this.renderResult, "the test should call render() before rerender()");
+
+    result.env.begin();
+    result.rerender();
+    result.env.commit();
   }
 
   protected set(key: string, value: Opaque): void {
@@ -481,14 +458,44 @@ export abstract class AbstractRenderTest {
   }
 }
 
-export class RenderTests extends AbstractRenderTest {
+export abstract class AbstractTestEnvironmentRenderTest extends AbstractRenderTest {
+  protected env: TestEnvironment;
+
+  registerComponent(type: ComponentKind = this.testType, name: string, layout: string) {
+    switch (type) {
+      case "Glimmer":
+        this.env.registerEmberishGlimmerComponent(name, EmberishGlimmerComponent, layout);
+        break;
+      case "Curly":
+        this.env.registerEmberishCurlyComponent(name, EmberishCurlyComponent, layout);
+        break;
+
+      case "Dynamic":
+        this.env.registerEmberishCurlyComponent(name, EmberishCurlyComponent, layout);
+        break;
+      case "Basic":
+      case "Fragment":
+        this.env.registerBasicComponent(name, BasicComponent, layout);
+        break;
+    }
+  }
+
+  registerHelper(name: string, helper: UserHelper): void {
+    this.env.registerHelper(name, helper);
+  }
+}
+
+export class RenderTests extends AbstractTestEnvironmentRenderTest {
   protected element: HTMLDivElement;
-  constructor(env: TestEnvironment) {
-    super(env);
+
+  protected env: TestEnvironment = new TestEnvironment();
+
+  constructor() {
+    super();
     this.element = this.env.getAppendOperations().createElement("div") as HTMLDivElement;
   }
+
   renderTemplate(template: string): RenderResult {
-    this.populateHelpers();
     let { env } = this;
     return renderTemplate(template, {
       env,
@@ -501,28 +508,38 @@ export class RenderTests extends AbstractRenderTest {
 
 export class RehydrationTests extends RenderTests {
   serialized: string;
-  setupServer(template: string = this.template) {
+
+  protected env: never;
+  protected clientEnv: TestEnvironment;
+  protected serverEnv: TestEnvironment;
+
+  constructor() {
+    super();
+    this.clientEnv = new TestEnvironment();
+
     let doc = new SimpleDOM.Document();
-    let env = new TestEnvironment({
+
+    this.serverEnv = new TestEnvironment({
       document: doc,
       appendOperations: new NodeDOMTreeConstruction(doc)
     });
-    this.setup({ template, env });
+  }
+
+  setupServer(template: string = this.template) {
+    this.setup({ template });
   }
 
   setupClient(template: string = this.template) {
-    let env = new TestEnvironment();
     let div = document.createElement("div");
 
     expect(this.serialized, "Should have serialized HTML from `this.renderServerSide()`");
 
     div.innerHTML = this.serialized;
     this.element = div;
-    this.setup({ template, env });
+    this.setup({ template });
   }
 
-  setup({ template, context, env }: { template: string; context?: Dict<Opaque>; env?: TestEnvironment }) {
-    if (env) this.env = env;
+  setup({ template, context }: { template: string; context?: Dict<Opaque>; env?: TestEnvironment }) {
     this.template = template;
     if (context) this.setProperties(context);
   }
@@ -538,8 +555,7 @@ export class RehydrationTests extends RenderTests {
       this.context = context;
     }
     this.setupServer();
-    this.populateHelpers();
-    let { env } = this;
+    let env = this.serverEnv;
     this.element = env.getAppendOperations().createElement("div") as HTMLDivElement;
     let template = expect(this.template, "Must set up a template before calling renderServerSide");
     // Emulate server-side render
@@ -566,8 +582,8 @@ export class RehydrationTests extends RenderTests {
       this.context = context;
     }
     this.setupClient();
-    this.populateHelpers();
-    let { env } = this;
+    // this.populateHelpers();
+    let env = this.clientEnv;
     this.element = env.getAppendOperations().createElement("div") as HTMLDivElement;
     let template = expect(this.template, "Must set up a template before calling renderClientSide");
     // Client-side rehydration
@@ -833,14 +849,18 @@ function isTestFunction(value: any): value is (this: AbstractRenderTest, assert:
 
 export function renderTemplate(template: string, options: RenderLayoutOptions & { env: TestEnvironment }) {
   let { env } = options;
-  env.begin();
 
-  let templateIterator = env.compile(template).renderLayout(options);
+  let iterator = env.compile(template).renderLayout(options);
+  return renderSync(env, iterator);
+}
+
+export function renderSync(env: Environment, iterator: TemplateIterator) {
+  env.begin();
 
   let iteratorResult: IteratorResult<RenderResult>;
 
   do {
-    iteratorResult = templateIterator.next() as IteratorResult<RenderResult>;
+    iteratorResult = iterator.next() as IteratorResult<RenderResult>;
   } while (!iteratorResult.done);
 
   let result = iteratorResult.value;

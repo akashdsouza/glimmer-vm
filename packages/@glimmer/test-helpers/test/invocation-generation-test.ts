@@ -1,10 +1,9 @@
 import { RenderTests } from "../lib/abstract-test-case";
-import { TestEnvironment } from "../lib/environment";
 
 let renderTests: RenderTests;
 QUnit.module("Render Tests: buildComponent", {
   beforeEach() {
-    renderTests = new RenderTests(new TestEnvironment());
+    renderTests = new RenderTests();
   }
 });
 
